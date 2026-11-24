@@ -39,7 +39,9 @@ Bots start in autonomous mode and clear their current task when a new map loads.
 
 ## Current scope
 
-Mindy uses deterministic rules and Mindustry’s movement and ore APIs. It responds to nearby enemies first. In wave sectors it looks for a place to build a self-supplying outpost on the approach from the nearest enemy spawn. It rotates the layout to face the approach, checks that the drill sits on copper, and reserves 20 copper for the team before starting. It skips an outpost when the sector has no suitable site or there's already a Duo near the core.
+Mindy uses deterministic rules and Mindustry’s movement and ore APIs. It prioritizes visible enemies threatening the core, leads moving targets, and tries to keep enough room to fire. When badly damaged, it falls back toward a powered repair point or away from the threat. It resumes an interrupted building project once it disengages.
+
+In wave sectors it looks for a place to build a self-supplying outpost on the approach from the nearest enemy spawn. It rotates the layout to face the approach, checks that the drill sits on copper, and reserves 20 copper for the team before starting. It skips an outpost when the sector has no suitable site or there's already a Duo near the core.
 
 Both blueprints are native Mindustry schematics you can import individually. Place the mechanical drill over copper ore so it feeds the adjacent Duo.
 

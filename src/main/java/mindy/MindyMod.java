@@ -7,7 +7,7 @@ import arc.util.Log;
 import arc.util.Strings;
 import arc.util.Time;
 import mindustry.core.NetClient;
-import mindustry.entities.Units;
+import mindustry.core.World;
 import mindustry.entities.units.BuildPlan;
 import mindustry.game.EventType.ClientLoadEvent;
 import mindustry.game.EventType.PlayerChatEvent;
@@ -67,6 +67,7 @@ public class MindyMod extends Mod {
         private ConstructBuild construction;
         private boolean building;
         private final DefensePlanner defensePlanner = new DefensePlanner();
+        private final TacticalController tactics = new TacticalController();
         private BuildProject project;
         private int projectStep;
         private float projectDeadline;
@@ -89,6 +90,7 @@ public class MindyMod extends Mod {
             project = null;
             projectStep = 0;
             nextProjectSearch = 0;
+            tactics.reset();
             status = "holding position";
             if (!player.dead()) player.unit().mineTile(null);
         }
@@ -177,24 +179,28 @@ public class MindyMod extends Mod {
         }
 
         private void updateAutonomous(Unit unit) {
-            float range = unit.range();
-            var enemy = unit.type.hasWeapons()
-                ? Units.closestEnemy(unit.team, unit.x, unit.y, range,
-                    target -> target.checkTarget(unit.type.targetAir, unit.type.targetGround))
-                : null;
-            if (enemy != null) {
+            var core = unit.closestCore();
+            var order = tactics.decide(unit, core);
+            if (order != null) {
                 unit.mineTile(null);
                 unit.clearBuilding();
-                unit.aim(enemy.x, enemy.y, true);
-                player.mouseX = unit.aimX();
-                player.mouseY = unit.aimY();
-                player.shooting = true;
-                unit.controlWeapons(true, true);
-                status = "defending against nearby enemies";
+                if (project != null) projectDeadline = Time.time + 1800f;
+                var aim = order.aim();
+                if (aim != null) {
+                    unit.aim(aim.x, aim.y, true);
+                    player.mouseX = unit.aimX();
+                    player.mouseY = unit.aimY();
+                    player.shooting = true;
+                    unit.controlWeapons(true, true);
+                }
+                status = order.status();
+                var goal = order.destination();
+                if (world.isInMapArea(World.toTile(goal.x), World.toTile(goal.y))) {
+                    moveToward(unit, goal.x, goal.y, 12f);
+                }
                 return;
             }
 
-            var core = unit.closestCore();
             if (core == null) {
                 status = "waiting for a team core";
                 unit.mineTile(null);
