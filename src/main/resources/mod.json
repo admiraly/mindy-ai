@@ -1,0 +1,10 @@
+{
+  "name": "mindy-ai",
+  "displayName": "Mindy AI",
+  "main": "mindy.MindyMod",
+  "version": "0.1.0",
+  "minGameVersion": "160.8",
+  "java": true,
+  "hidden": true,
+  "description": "Co-op bots that join as players and take on routine tasks."
+}
