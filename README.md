@@ -1,6 +1,6 @@
 # Mindy AI
 
-Mindy adds an autonomous teammate to your private Mindustry co-op session. It gathers scarce ores, helps finish nearby construction your team has started, and fires at nearby enemies. When it has no job, it stays near you or the team core.
+Mindy adds an autonomous teammate to your private Mindustry co-op session. It gathers scarce ores, builds starter mining lines, helps finish nearby construction your team has started, and fires at nearby enemies. When it has no job, it stays near you or the team core.
 
 Each bot joins as a player through the stock desktop client with a client-side mod. The host and human players can use vanilla Mindustry.
 
@@ -39,7 +39,7 @@ Bots start in autonomous mode and clear their current task when a new map loads.
 
 ## Current scope
 
-Mindy uses deterministic rules and Mindustry’s movement and ore APIs. It helps with existing construction projects. Designing factories, planning defenses, and progressing the campaign still require a player. Each bot runs in a graphical client.
+Mindy uses deterministic rules and Mindustry’s movement and ore APIs. Once the host has unlocked mechanical drills and conveyors, Mindy can choose an ore patch and build a starter mining line that feeds the core. It checks build costs and looks for a route through empty tiles within eight conveyors of the core. Advanced factories, defense layouts, research, and campaign decisions still require a player. Each bot runs in a graphical client.
 
 Tested with two bots in a Serpulo campaign sector and on a vanilla dedicated server. Campaign sector transitions and platforms other than Windows still need playtesting.
 

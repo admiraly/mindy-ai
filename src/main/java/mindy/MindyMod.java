@@ -13,6 +13,7 @@ import mindustry.game.EventType.ClientLoadEvent;
 import mindustry.game.EventType.PlayerChatEvent;
 import mindustry.game.EventType.WorldLoadEvent;
 import mindustry.gen.Call;
+import mindustry.gen.Building;
 import mindustry.gen.Groups;
 import mindustry.gen.Player;
 import mindustry.gen.Unit;
@@ -20,6 +21,7 @@ import mindustry.input.DesktopInput;
 import mindustry.mod.Mod;
 import mindustry.type.Item;
 import mindustry.world.Tile;
+import mindustry.world.Build;
 import mindustry.world.blocks.ConstructBlock.ConstructBuild;
 
 import static mindustry.Vars.*;
@@ -64,6 +66,10 @@ public class MindyMod extends Mod {
         private float nextDecision;
         private ConstructBuild construction;
         private boolean building;
+        private MiningPlanner.Project project;
+        private int projectStep;
+        private float projectDeadline;
+        private float nextProjectSearch;
         private String status = "holding position";
 
         BotInput(String owner) {
@@ -79,6 +85,9 @@ public class MindyMod extends Mod {
             nextDeposit = 0;
             nextDecision = 0;
             construction = null;
+            project = null;
+            projectStep = 0;
+            nextProjectSearch = 0;
             status = "holding position";
             if (!player.dead()) player.unit().mineTile(null);
         }
@@ -158,7 +167,7 @@ public class MindyMod extends Mod {
                 }
             }
 
-            if ((!autonomous || construction == null) && building) {
+            if ((!autonomous || construction == null && project == null) && building) {
                 unit.clearBuilding();
                 building = false;
             }
@@ -190,6 +199,8 @@ public class MindyMod extends Mod {
                 unit.mineTile(null);
                 return;
             }
+
+            if (unit.canBuild() && updateProject(unit, core)) return;
 
             if (Time.time >= nextDecision) {
                 nextDecision = Time.time + 60f;
@@ -250,6 +261,57 @@ public class MindyMod extends Mod {
                     else moveToward(unit, teammate.x, teammate.y, 64f);
                 }
             }
+        }
+
+        private boolean updateProject(Unit unit, Building core) {
+            if (project == null && Time.time >= nextProjectSearch) {
+                nextProjectSearch = Time.time + 600f;
+                project = MiningPlanner.plan(unit, core);
+                projectStep = 0;
+                if (project != null) {
+                    projectDeadline = Time.time + 1800f;
+                    Log.info("Mindy: planned a @ mining line with @ blocks", project.item().name, project.plans().size());
+                }
+            }
+            if (project == null) return false;
+
+            while (projectStep < project.plans().size()) {
+                BuildPlan plan = project.plans().get(projectStep);
+                Tile tile = plan.tile();
+                if (tile.block() == plan.block && tile.team() == unit.team
+                    && (!plan.block.rotate || tile.build.rotation == plan.rotation)) {
+                    projectStep++;
+                    projectDeadline = Time.time + 1800f;
+                    continue;
+                }
+
+                boolean matchingSite = tile.build instanceof ConstructBuild site && site.team == unit.team
+                    && site.current == plan.block && site.rotation == plan.rotation && !site.activeDeconstruct;
+                if (Time.time > projectDeadline || !matchingSite && (!MiningPlanner.clearFootprint(plan)
+                    || !Build.validPlace(plan.block, unit.team, plan.x, plan.y, plan.rotation))) {
+                    Log.info("Mindy: paused the @ mining project because placement was blocked or stalled", project.item().name);
+                    break;
+                }
+                unit.mineTile(null);
+                if (unit.buildPlan() != plan) {
+                    unit.clearBuilding();
+                    unit.addBuild(plan);
+                }
+                building = true;
+                isBuilding = true;
+                status = "building a " + project.item().name + " mining line";
+                moveToward(unit, tile.worldx(), tile.worldy(), unit.type.buildRange - tilesize);
+                return true;
+            }
+
+            if (projectStep == project.plans().size()) {
+                Log.info("Mindy: completed the @ mining line", project.item().name);
+            }
+            unit.clearBuilding();
+            building = false;
+            project = null;
+            nextProjectSearch = Time.time + 900f;
+            return false;
         }
 
         private void updateMining(Unit unit) {
