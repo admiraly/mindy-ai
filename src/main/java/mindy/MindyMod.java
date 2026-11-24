@@ -10,6 +10,7 @@ import mindustry.core.NetClient;
 import mindustry.core.World;
 import mindustry.entities.units.BuildPlan;
 import mindustry.game.EventType.ClientLoadEvent;
+import mindustry.game.EventType.BlockDestroyEvent;
 import mindustry.game.EventType.PlayerChatEvent;
 import mindustry.game.EventType.WorldLoadEvent;
 import mindustry.gen.Call;
@@ -44,7 +45,11 @@ public class MindyMod extends Mod {
             BotInput input = new BotInput(owner);
             control.setInput(input);
             Events.on(PlayerChatEvent.class, input::onChat);
-            Events.on(WorldLoadEvent.class, ignored -> input.clearTask());
+            Events.on(WorldLoadEvent.class, ignored -> {
+                input.recovery.clear();
+                input.clearTask();
+            });
+            Events.on(BlockDestroyEvent.class, destroyed -> input.recovery.destroyed(destroyed.tile));
             player.name = name;
             Core.settings.put("name", name);
             Log.info("Mindy: @ joining @:@ (controller: @)", name, host, port, owner);
@@ -68,6 +73,7 @@ public class MindyMod extends Mod {
         private boolean building;
         private final DefensePlanner defensePlanner = new DefensePlanner();
         private final TacticalController tactics = new TacticalController();
+        private final ProjectRecovery recovery = new ProjectRecovery();
         private BuildProject project;
         private int projectStep;
         private float projectDeadline;
@@ -274,7 +280,8 @@ public class MindyMod extends Mod {
             if (project == null && Time.time >= nextProjectSearch) {
                 nextProjectSearch = Time.time + 600f;
                 // Invest in a self-supplying defense before expanding production when waves threaten this core.
-                project = defensePlanner.plan(unit, core);
+                project = recovery.next(unit, core);
+                if (project == null) project = defensePlanner.plan(unit, core);
                 if (project == null) project = MiningPlanner.plan(unit, core);
                 projectStep = 0;
                 if (project != null) {
@@ -289,6 +296,7 @@ public class MindyMod extends Mod {
                 Tile tile = plan.tile();
                 if (tile.block() == plan.block && tile.team() == unit.team
                     && (!plan.block.rotate || tile.build.rotation == plan.rotation)) {
+                    recovery.remember(unit.team, plan);
                     projectStep++;
                     projectDeadline = Time.time + 1800f;
                     continue;
