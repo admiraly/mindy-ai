@@ -15,16 +15,14 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.List;
 
 import static mindustry.Vars.*;
 
 final class MiningPlanner {
-    record Project(Item item, List<BuildPlan> plans) {}
     private record Route(Tile tile, int rotation, Route downstream, int length) {}
     private static final int maxBelts = 8;
 
-    static Project plan(Unit unit, Building core) {
+    static BuildProject plan(Unit unit, Building core) {
         var drill = (Drill) Blocks.mechanicalDrill;
         var belt = Blocks.conveyor;
         if (!drill.unlockedNowHost() || !belt.unlockedNowHost()
@@ -38,7 +36,7 @@ final class MiningPlanner {
         var frontier = new ArrayDeque<Route>();
         var visited = new HashSet<Integer>();
         core.tile.getLinkedTiles(tile -> frontier.add(new Route(tile, 0, null, 0)));
-        Project best = null;
+        BuildProject best = null;
         float bestScore = Float.NEGATIVE_INFINITY;
         while (!frontier.isEmpty()) {
             Route end = frontier.remove();
@@ -69,8 +67,7 @@ final class MiningPlanner {
                         }
                     }
                     if (!clear || item == null || nearbyProduction.contains(item)
-                        || !Build.validPlace(drill, unit.team, x, y, 0)
-                        || !affordable(unit, core, end.length)) continue;
+                        || !Build.validPlace(drill, unit.team, x, y, 0)) continue;
                     float score = oreTiles * 4f - end.length - Math.min(core.items.get(item), 200) / 25f;
                     if (score <= bestScore) continue;
                     var plans = new ArrayList<BuildPlan>();
@@ -79,7 +76,9 @@ final class MiningPlanner {
                     }
                     Collections.reverse(plans);
                     plans.add(new BuildPlan(x, y, 0, drill));
-                    best = new Project(item, plans);
+                    var candidate = new BuildProject(item.name + " mining line", plans);
+                    if (!candidate.affordable(unit, core, null, 0)) continue;
+                    best = candidate;
                     bestScore = score;
                 }
 
@@ -115,18 +114,4 @@ final class MiningPlanner {
         return false;
     }
 
-    private static boolean affordable(Unit unit, Building core, int belts) {
-        if (state.rules.infiniteResources || unit.team.rules().infiniteResources) return true;
-        int[] cost = new int[content.items().size];
-        for (var stack : Blocks.mechanicalDrill.requirements) {
-            cost[stack.item.id] += Math.round(stack.amount * state.rules.buildCostMultiplier);
-        }
-        for (var stack : Blocks.conveyor.requirements) {
-            cost[stack.item.id] += belts * Math.round(stack.amount * state.rules.buildCostMultiplier);
-        }
-        for (Item item : content.items()) {
-            if (core.items.get(item) < cost[item.id]) return false;
-        }
-        return true;
-    }
 }

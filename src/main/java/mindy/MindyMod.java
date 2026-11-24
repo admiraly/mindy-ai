@@ -66,7 +66,8 @@ public class MindyMod extends Mod {
         private float nextDecision;
         private ConstructBuild construction;
         private boolean building;
-        private MiningPlanner.Project project;
+        private final DefensePlanner defensePlanner = new DefensePlanner();
+        private BuildProject project;
         private int projectStep;
         private float projectDeadline;
         private float nextProjectSearch;
@@ -266,11 +267,13 @@ public class MindyMod extends Mod {
         private boolean updateProject(Unit unit, Building core) {
             if (project == null && Time.time >= nextProjectSearch) {
                 nextProjectSearch = Time.time + 600f;
-                project = MiningPlanner.plan(unit, core);
+                // Invest in a self-supplying defense before expanding production when waves threaten this core.
+                project = defensePlanner.plan(unit, core);
+                if (project == null) project = MiningPlanner.plan(unit, core);
                 projectStep = 0;
                 if (project != null) {
                     projectDeadline = Time.time + 1800f;
-                    Log.info("Mindy: planned a @ mining line with @ blocks", project.item().name, project.plans().size());
+                    Log.info("Mindy: planned @ with @ blocks", project.name(), project.plans().size());
                 }
             }
             if (project == null) return false;
@@ -289,7 +292,7 @@ public class MindyMod extends Mod {
                     && site.current == plan.block && site.rotation == plan.rotation && !site.activeDeconstruct;
                 if (Time.time > projectDeadline || !matchingSite && (!MiningPlanner.clearFootprint(plan)
                     || !Build.validPlace(plan.block, unit.team, plan.x, plan.y, plan.rotation))) {
-                    Log.info("Mindy: paused the @ mining project because placement was blocked or stalled", project.item().name);
+                    Log.info("Mindy: paused @ because placement was blocked or stalled", project.name());
                     break;
                 }
                 unit.mineTile(null);
@@ -299,13 +302,13 @@ public class MindyMod extends Mod {
                 }
                 building = true;
                 isBuilding = true;
-                status = "building a " + project.item().name + " mining line";
+                status = "building " + project.name();
                 moveToward(unit, tile.worldx(), tile.worldy(), unit.type.buildRange - tilesize);
                 return true;
             }
 
             if (projectStep == project.plans().size()) {
-                Log.info("Mindy: completed the @ mining line", project.item().name);
+                Log.info("Mindy: completed @", project.name());
             }
             unit.clearBuilding();
             building = false;

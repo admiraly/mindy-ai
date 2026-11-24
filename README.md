@@ -39,7 +39,14 @@ Bots start in autonomous mode and clear their current task when a new map loads.
 
 ## Current scope
 
-Mindy uses deterministic rules and Mindustry’s movement and ore APIs. Once the host has unlocked mechanical drills and conveyors, Mindy can choose an ore patch and build a starter mining line that feeds the core. It checks build costs and looks for a route through empty tiles within eight conveyors of the core. Advanced factories, defense layouts, research, and campaign decisions still require a player. Each bot runs in a graphical client.
+Mindy uses deterministic rules and Mindustry’s movement and ore APIs. It responds to nearby enemies first. In wave sectors it looks for a place to build a self-supplying outpost on the approach from the nearest enemy spawn. It rotates the layout to face the approach, checks that the drill sits on copper, and reserves 20 copper for the team before starting. It skips an outpost when the sector has no suitable site or there's already a Duo near the core.
+
+Both blueprints are native Mindustry schematics you can import individually. Place the mechanical drill over copper ore so it feeds the adjacent Duo.
+
+- [Copper Outpost](src/main/resources/blueprints/copper-outpost.msch) uses a drill and a Duo.
+- [Fortified Outpost](src/main/resources/blueprints/fortified-outpost.msch) adds two copper walls on the outer edge.
+
+When no outpost fits, Mindy looks for a starter mining line. Once the host has unlocked mechanical drills and conveyors, it can choose an ore patch and route up to eight conveyors through empty tiles to feed the core. It rechecks each placement during construction. Advanced factories, research, and campaign decisions still require a player. Each bot runs in a graphical client.
 
 Tested with two bots in a Serpulo campaign sector and on a vanilla dedicated server. Campaign sector transitions and platforms other than Windows still need playtesting.
 
