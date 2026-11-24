@@ -62,10 +62,11 @@ public class MindyMod extends Mod {
     private static class BotInput extends DesktopInput {
         private static final String[] chatLines = {
             "Ich bin ein Holzfäller und ich fühl mich stark",
-            "Kupfer ist mein Lieblingsgemüse.",
-            "Hat jemand meine Spitzhacke gesehen?",
-            "Der Kern kriegt heute Nachschlag.",
-            "Ich hab den Erzgang raus!"
+            "Was ist denn mit Karsten los?",
+            "Das bleibt alles so, wie's hier ist.",
+            "Anzeige ist raus.",
+            "Nein! Doch! Oh!",
+            "Warum liegt hier überhaupt Stroh?"
         };
 
         private final String owner;
@@ -79,6 +80,7 @@ public class MindyMod extends Mod {
         private boolean hauling;
         private boolean autonomous = true;
         private float nextChatter;
+        private float nextConversation;
         private int lastChatLine = -1;
         private float nextDecision;
         private ConstructBuild construction;
@@ -116,6 +118,7 @@ public class MindyMod extends Mod {
             nextProjectSearch = 0;
             tactics.reset();
             nextChatter = Time.time + Mathf.random(900f, 1500f);
+            nextConversation = 0;
             miningIdleReason = null;
             lastLoggedIdleReason = null;
             oreGoal = 0;
@@ -128,10 +131,16 @@ public class MindyMod extends Mod {
 
         void onChat(PlayerChatEvent event) {
             Player sender = event.player;
-            if (!net.client() || sender == player || sender.team() != player.team()
-                || !owner.equals(Strings.stripColors(sender.name))) return;
+            if (!net.client() || sender == player || sender.team() != player.team()) return;
 
-            String[] words = event.message.trim().split("\\s+");
+            String message = Strings.stripColors(event.message).strip();
+            if (!message.regionMatches(true, 0, "!mindy ", 0, 7)) {
+                converse(message);
+                return;
+            }
+            if (!owner.equals(Strings.stripColors(sender.name))) return;
+
+            String[] words = message.split("\\s+");
             if (words.length < 3 || !words[0].equalsIgnoreCase("!mindy")) return;
             boolean broadcast = words[1].equalsIgnoreCase("all");
             if (!broadcast && !words[1].equalsIgnoreCase(player.name)) return;
@@ -175,6 +184,41 @@ public class MindyMod extends Mod {
             Call.sendChatMessage(message);
         }
 
+        private void converse(String message) {
+            if (Time.time < nextConversation) return;
+            String name = player.name.toLowerCase(java.util.Locale.ROOT);
+            String lower = message.toLowerCase(java.util.Locale.ROOT);
+            if (lower.startsWith("@")) lower = lower.substring(1);
+            if (!lower.startsWith(name)
+                || lower.length() > name.length() && Character.isLetterOrDigit(lower.charAt(name.length()))) return;
+
+            String question = lower.substring(name.length()).replaceFirst("^[\\s,:]+", "");
+            String answer;
+            if (question.contains("meme") || question.contains("spruch")) {
+                answer = randomMeme();
+            } else if (question.contains("danke") || question.contains("dank dir")) {
+                answer = "Gern.";
+            } else if (question.contains("wie geht") || question.contains("alles klar")) {
+                answer = player.dead() ? "Ich warte aufs Respawnen." : "Alles gut. Bin im Einsatz.";
+            } else if (question.contains("status") || question.contains("was machst") || question.contains("was tust")
+                || question.contains("idle") || question.contains("warum stehst")) {
+                answer = player.dead() ? "Ich warte aufs Respawnen." : "Status: " + status + ".";
+            } else if (question.contains("wie viel") || question.contains("wieviel") || question.contains("vorrat")) {
+                var core = player.team().core();
+                if (core == null) answer = "Wir haben gerade keinen Kern.";
+                else if (question.contains("kupfer")) answer = "Kupfer im Kern: " + core.items.get(Items.copper) + ".";
+                else if (question.contains("blei")) answer = "Blei im Kern: " + core.items.get(Items.lead) + ".";
+                else answer = "Im Kern: " + core.items.get(Items.copper) + " Kupfer und " + core.items.get(Items.lead) + " Blei.";
+            } else if (question.isBlank() || question.matches("(hi|hallo|hey|moin)\\b.*")) {
+                answer = "Moin.";
+            } else {
+                answer = "Frag mich nach meinem Status, Kupfer oder Blei im Kern oder einem Meme.";
+            }
+            nextConversation = Time.time + 300f;
+            nextChatter = Math.max(nextChatter, Time.time + 900f);
+            reply(answer);
+        }
+
         @Override
         protected void updateMovement(Unit unit) {
             if (!net.client()) {
@@ -213,10 +257,15 @@ public class MindyMod extends Mod {
         private void maybeChat() {
             if (Time.time < nextChatter) return;
             nextChatter = Time.time + Mathf.random(5400f, 10800f);
+            nextConversation = Time.time + 300f;
+            reply(randomMeme());
+        }
+
+        private String randomMeme() {
             int index = Mathf.random(chatLines.length - (lastChatLine < 0 ? 1 : 2));
             if (lastChatLine >= 0 && index >= lastChatLine) index++;
             lastChatLine = index;
-            reply(chatLines[index]);
+            return chatLines[index];
         }
 
         private void updateAutonomous(Unit unit) {
