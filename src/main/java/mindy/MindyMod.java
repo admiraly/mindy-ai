@@ -2,6 +2,7 @@ package mindy;
 
 import arc.Core;
 import arc.Events;
+import arc.math.Mathf;
 import arc.math.geom.Vec2;
 import arc.util.Log;
 import arc.util.Strings;
@@ -59,6 +60,14 @@ public class MindyMod extends Mod {
     }
 
     private static class BotInput extends DesktopInput {
+        private static final String[] chatLines = {
+            "Ich bin ein Holzfäller und ich fühl mich stark",
+            "Kupfer ist mein Lieblingsgemüse.",
+            "Hat jemand meine Spitzhacke gesehen?",
+            "Der Kern kriegt heute Nachschlag.",
+            "Ich hab den Erzgang raus!"
+        };
+
         private final String owner;
         private final Vec2 destination = new Vec2();
         private final Vec2 velocity = new Vec2();
@@ -69,6 +78,8 @@ public class MindyMod extends Mod {
         private float nextDeposit;
         private boolean hauling;
         private boolean autonomous = true;
+        private float nextChatter;
+        private int lastChatLine = -1;
         private float nextDecision;
         private ConstructBuild construction;
         private boolean building;
@@ -104,6 +115,7 @@ public class MindyMod extends Mod {
             projectStep = 0;
             nextProjectSearch = 0;
             tactics.reset();
+            nextChatter = Time.time + Mathf.random(900f, 1500f);
             miningIdleReason = null;
             lastLoggedIdleReason = null;
             oreGoal = 0;
@@ -176,6 +188,7 @@ public class MindyMod extends Mod {
             unit.controlWeapons(false, false);
             if (autonomous) {
                 updateAutonomous(unit);
+                maybeChat();
             } else if (ore != null) {
                 updateMining(unit);
             } else if (leader != null) {
@@ -195,6 +208,15 @@ public class MindyMod extends Mod {
             }
             unit.movePref(velocity);
             unit.lookAt(player.shooting && unit.type.faceTarget ? unit.angleTo(unit.aimX(), unit.aimY()) : unit.prefRotation());
+        }
+
+        private void maybeChat() {
+            if (Time.time < nextChatter) return;
+            nextChatter = Time.time + Mathf.random(5400f, 10800f);
+            int index = Mathf.random(chatLines.length - (lastChatLine < 0 ? 1 : 2));
+            if (lastChatLine >= 0 && index >= lastChatLine) index++;
+            lastChatLine = index;
+            reply(chatLines[index]);
         }
 
         private void updateAutonomous(Unit unit) {

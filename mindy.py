@@ -65,7 +65,7 @@ def build():
         classes = work / "classes"
         classes.mkdir()
         subprocess.run(
-            [java_tool("javac"), "--release", "17", "-cp", game, "-d", classes, *sources],
+            [java_tool("javac"), "--release", "17", "-encoding", "UTF-8", "-cp", game, "-d", classes, *sources],
             check=True,
         )
         archive = work / MOD.name
