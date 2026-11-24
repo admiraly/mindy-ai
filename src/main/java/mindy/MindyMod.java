@@ -267,11 +267,8 @@ public class MindyMod extends Mod {
                     updateMining(unit);
                 } else {
                     unit.mineTile(null);
-                    Player teammate = Groups.player.find(other -> other != player && other.team() == player.team()
-                        && !other.dead() && owner.equals(Strings.stripColors(other.name)));
-                    status = teammate == null ? "waiting near the core" : "staying near " + owner;
-                    if (teammate == null) moveToward(unit, core.x, core.y, 64f);
-                    else moveToward(unit, teammate.x, teammate.y, 64f);
+                    status = "waiting near the core";
+                    moveToward(unit, core.x, core.y, 64f);
                 }
             }
         }

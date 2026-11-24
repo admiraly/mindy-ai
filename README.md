@@ -1,6 +1,6 @@
 # Mindy AI
 
-Mindy adds an autonomous teammate to your private Mindustry co-op session. It gathers scarce ores, builds starter mining lines, helps finish nearby construction your team has started, and fires at nearby enemies. When it has no job, it stays near you or the team core.
+Mindy adds an autonomous teammate to your private Mindustry co-op session. It gathers scarce ores, builds starter mining lines, helps finish nearby construction your team has started, and fires at nearby enemies. When it has no job, it stays near the team core. It follows players only when commanded.
 
 Each bot joins as a player through the stock desktop client with a client-side mod. The host and human players can use vanilla Mindustry.
 
@@ -31,7 +31,7 @@ Give each bot a distinct name. Add `--port` if the host uses a port other than 6
 | --- | --- |
 | `!mindy Mindy auto` | Resumes autonomous task selection after a manual command. |
 | `!mindy CopperBot mine copper` | Finds mineable copper and deposits it at the nearest team core. Use other item names, such as `lead`, when the bot’s unit can mine them. |
-| `!mindy LeadBot follow` | Follows the player who sent the command. |
+| `!mindy Mindy follow` | Follows you until you give it another task or use `auto`. |
 | `!mindy all hold` | Stops the current task on every bot. |
 | `!mindy all status` | Reports what each bot is doing or waiting for. |
 
