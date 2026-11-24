@@ -82,6 +82,10 @@ public class MindyMod extends Mod {
         private String status = "holding position";
         private String miningIdleReason;
         private String lastLoggedIdleReason;
+        private int oreGoal;
+        private Tile patrolTarget;
+        private int patrolDirection;
+        private float nextPatrolTarget;
 
         BotInput(String owner) {
             this.owner = owner;
@@ -102,6 +106,10 @@ public class MindyMod extends Mod {
             tactics.reset();
             miningIdleReason = null;
             lastLoggedIdleReason = null;
+            oreGoal = 0;
+            patrolTarget = null;
+            patrolDirection = 0;
+            nextPatrolTarget = 0;
             status = "holding position";
             if (!player.dead()) player.unit().mineTile(null);
         }
@@ -234,7 +242,7 @@ public class MindyMod extends Mod {
                             }
                         });
                 }
-                if (!unit.canMine() || unit.stack.amount == 0 && (ore == null || core.items.get(ore) >= stockGoal(core, ore)
+                if (!unit.canMine() || unit.stack.amount == 0 && (ore == null || core.items.get(ore) >= oreGoal
                     || unit.getMineResult(mine) != ore)) {
                     chooseMiningJob(unit, core);
                 }
@@ -259,12 +267,12 @@ public class MindyMod extends Mod {
                     updateMining(unit);
                 } else {
                     unit.mineTile(null);
-                    status = miningIdleReason == null ? "checking for work near the core" : miningIdleReason;
+                    status = miningIdleReason == null ? "patrolling the core" : "patrolling the core: " + miningIdleReason;
                     if (!status.equals(lastLoggedIdleReason)) {
                         Log.info("Mindy: @", status);
                         lastLoggedIdleReason = status;
                     }
-                    moveToward(unit, core.x, core.y, 64f);
+                    patrol(unit, core);
                 }
             }
         }
@@ -272,6 +280,7 @@ public class MindyMod extends Mod {
         private void chooseMiningJob(Unit unit, Building core) {
             ore = null;
             mine = null;
+            oreGoal = 0;
             if (!unit.canMine()) {
                 miningIdleReason = "no build job available and this unit cannot mine";
                 return;
@@ -284,22 +293,46 @@ public class MindyMod extends Mod {
                 Tile candidate = findOre(unit, item);
                 if (unit.getMineResult(candidate) != item) continue;
                 hasMineableOre = true;
-                int goal = stockGoal(core, item);
-                int shortage = goal - core.items.get(item);
-                if (shortage <= 0) continue;
+                int capacity = core.getMaximumAccepted(item);
+                int stock = core.items.get(item);
+                if (stock >= capacity) continue;
+                int reserve = stockGoal(core, item);
+                boolean belowReserve = stock < reserve;
+                int goal = belowReserve ? reserve : capacity;
 
                 float trip = candidate.dst(unit.x, unit.y) + Math.max(0f, candidate.dst(core.x, core.y) - itemTransferRange);
                 float priority = item == Items.copper ? 1.3f : 1f;
-                float score = priority * shortage / goal - trip / 1000f;
+                float score = (belowReserve ? 4f : 0f) + priority * (goal - stock) / goal - Math.min(2f, trip / 1000f);
                 if (score > bestScore) {
                     ore = item;
                     mine = candidate;
+                    oreGoal = goal;
                     bestScore = score;
                 }
             }
             miningIdleReason = hasMineableOre
-                ? "no build job available and mineable ores are stocked"
+                ? "no build job available and storage is full for mineable ores"
                 : "no build job available and no suitable ores found for this unit";
+        }
+
+        private void patrol(Unit unit, Building core) {
+            if (patrolTarget == null || unit.within(patrolTarget, 16f) || Time.time >= nextPatrolTarget
+                || !unit.canPass(patrolTarget.x, patrolTarget.y) || !patrolTarget.within(core, 112f)) {
+                patrolTarget = null;
+                for (int attempt = 0; attempt < 16; attempt++) {
+                    int direction = patrolDirection++ & 15;
+                    float radius = direction % 2 == 0 ? 72f : 48f;
+                    float angle = direction * 22.5f;
+                    Tile candidate = world.tileWorld(core.x + arc.math.Angles.trnsx(angle, radius),
+                        core.y + arc.math.Angles.trnsy(angle, radius));
+                    if (candidate != null && unit.canPass(candidate.x, candidate.y) && !unit.within(candidate, 24f)) {
+                        patrolTarget = candidate;
+                        break;
+                    }
+                }
+                nextPatrolTarget = Time.time + 240f;
+            }
+            if (patrolTarget != null) moveToward(unit, patrolTarget.worldx(), patrolTarget.worldy(), 12f);
         }
 
         private int stockGoal(Building core, Item item) {
@@ -389,7 +422,8 @@ public class MindyMod extends Mod {
                 if (!unit.within(core, itemTransferRange - tilesize)) {
                     moveToward(unit, core.x, core.y, itemTransferRange - tilesize);
                 } else if (core.acceptStack(unit.item(), unit.stack.amount, unit) == 0) {
-                    status = "waiting for space in the core";
+                    status = autonomous ? "patrolling with cargo while the core is full" : "waiting for space in the core";
+                    if (autonomous) patrol(unit, core);
                 } else if (Time.time >= nextDeposit) {
                     Call.transferInventory(player, core);
                     nextDeposit = Time.time + Math.max(60f, state.rules.itemDepositCooldown * 60f);
