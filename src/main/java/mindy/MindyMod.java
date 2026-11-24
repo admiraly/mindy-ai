@@ -7,6 +7,8 @@ import arc.util.Log;
 import arc.util.Strings;
 import arc.util.Time;
 import mindustry.core.NetClient;
+import mindustry.entities.Units;
+import mindustry.entities.units.BuildPlan;
 import mindustry.game.EventType.ClientLoadEvent;
 import mindustry.game.EventType.PlayerChatEvent;
 import mindustry.game.EventType.WorldLoadEvent;
@@ -18,6 +20,7 @@ import mindustry.input.DesktopInput;
 import mindustry.mod.Mod;
 import mindustry.type.Item;
 import mindustry.world.Tile;
+import mindustry.world.blocks.ConstructBlock.ConstructBuild;
 
 import static mindustry.Vars.*;
 
@@ -57,6 +60,10 @@ public class MindyMod extends Mod {
         private float nextSearch;
         private float nextDeposit;
         private boolean hauling;
+        private boolean autonomous = true;
+        private float nextDecision;
+        private ConstructBuild construction;
+        private boolean building;
         private String status = "holding position";
 
         BotInput(String owner) {
@@ -70,6 +77,8 @@ public class MindyMod extends Mod {
             hauling = false;
             nextSearch = 0;
             nextDeposit = 0;
+            nextDecision = 0;
+            construction = null;
             status = "holding position";
             if (!player.dead()) player.unit().mineTile(null);
         }
@@ -85,12 +94,19 @@ public class MindyMod extends Mod {
             if (!broadcast && !words[1].equalsIgnoreCase(player.name)) return;
 
             switch (words[2].toLowerCase(java.util.Locale.ROOT)) {
+                case "auto" -> {
+                    clearTask();
+                    autonomous = true;
+                    reply("Picking my own tasks.");
+                }
                 case "hold" -> {
                     clearTask();
+                    autonomous = false;
                     reply("Holding position.");
                 }
                 case "follow" -> {
                     clearTask();
+                    autonomous = false;
                     leader = sender;
                     reply("Following " + owner + ".");
                 }
@@ -101,12 +117,13 @@ public class MindyMod extends Mod {
                         return;
                     }
                     clearTask();
+                    autonomous = false;
                     ore = requested;
                     status = "looking for " + ore.name;
                     reply("Mining " + ore.name + ".");
                 }
                 case "status" -> reply(status + ".");
-                default -> reply("Commands: follow, hold, mine <item>, status.");
+                default -> reply("Commands: auto, follow, hold, mine <item>, status.");
             }
         }
 
@@ -126,7 +143,9 @@ public class MindyMod extends Mod {
             player.shooting = false;
             player.boosting = false;
             unit.controlWeapons(false, false);
-            if (ore != null) {
+            if (autonomous) {
+                updateAutonomous(unit);
+            } else if (ore != null) {
                 updateMining(unit);
             } else if (leader != null) {
                 if (!Groups.player.contains(other -> other == leader) || leader.team() != player.team()) {
@@ -139,8 +158,98 @@ public class MindyMod extends Mod {
                 }
             }
 
+            if ((!autonomous || construction == null) && building) {
+                unit.clearBuilding();
+                building = false;
+            }
             unit.movePref(velocity);
-            unit.lookAt(unit.prefRotation());
+            unit.lookAt(player.shooting && unit.type.faceTarget ? unit.angleTo(unit.aimX(), unit.aimY()) : unit.prefRotation());
+        }
+
+        private void updateAutonomous(Unit unit) {
+            float range = unit.range();
+            var enemy = unit.type.hasWeapons()
+                ? Units.closestEnemy(unit.team, unit.x, unit.y, range,
+                    target -> target.checkTarget(unit.type.targetAir, unit.type.targetGround))
+                : null;
+            if (enemy != null) {
+                unit.mineTile(null);
+                unit.clearBuilding();
+                unit.aim(enemy.x, enemy.y, true);
+                player.mouseX = unit.aimX();
+                player.mouseY = unit.aimY();
+                player.shooting = true;
+                unit.controlWeapons(true, true);
+                status = "defending against nearby enemies";
+                return;
+            }
+
+            var core = unit.closestCore();
+            if (core == null) {
+                status = "waiting for a team core";
+                unit.mineTile(null);
+                return;
+            }
+
+            if (Time.time >= nextDecision) {
+                nextDecision = Time.time + 60f;
+                construction = null;
+                if (unit.canBuild()) {
+                    indexer.eachBlock(unit, 240f, block -> block instanceof ConstructBuild site
+                        && site.wasConstructing && !site.activeDeconstruct
+                        && (state.rules.infiniteResources || unit.team.rules().infiniteResources
+                        || core.items.has(site.current.requirements, state.rules.buildCostMultiplier)),
+                        block -> {
+                            if (construction == null || unit.dst2(block) < unit.dst2(construction)) {
+                                construction = (ConstructBuild) block;
+                            }
+                        });
+                }
+                if (!unit.canMine() || unit.stack.amount == 0 && (ore == null || core.items.get(ore) >= 200
+                    || unit.getMineResult(mine) != ore)) {
+                    ore = null;
+                    mine = null;
+                    int lowest = 200;
+                    if (unit.canMine()) {
+                        for (Item item : content.items()) {
+                            int stock = core.items.get(item);
+                            if (stock >= lowest || !unit.canMine(item)) continue;
+                            Tile candidate = unit.type.mineFloor ? indexer.findClosestOre(unit, item) : null;
+                            if (candidate == null && unit.type.mineWalls) candidate = indexer.findClosestWallOre(unit, item);
+                            if (unit.getMineResult(candidate) != item) continue;
+                            ore = item;
+                            mine = candidate;
+                            lowest = stock;
+                        }
+                    }
+                }
+            }
+
+            if (construction != null && construction.isValid() && !construction.activeDeconstruct) {
+                unit.mineTile(null);
+                if (unit.buildPlan() == null || unit.buildPlan().tile() != construction.tile) {
+                    unit.clearBuilding();
+                    unit.addBuild(new BuildPlan(construction.tileX(), construction.tileY(), construction.rotation,
+                        construction.current, construction.lastConfig));
+                }
+                building = true;
+                isBuilding = true;
+                status = "helping build " + construction.current.name;
+                moveToward(unit, construction.x, construction.y, unit.type.buildRange - tilesize);
+            } else {
+                if (building) unit.clearBuilding();
+                building = false;
+                if (ore != null) {
+                    updateMining(unit);
+                } else {
+                    unit.mineTile(null);
+                    Player teammate = Groups.player.find(other -> other != player && other.team() == player.team()
+                        && !other.dead() && owner.equals(Strings.stripColors(other.name)));
+                    status = teammate == null ? "waiting near the core" : "staying near " + owner;
+                    if (teammate == null) moveToward(unit, core.x, core.y, 64f);
+                    else moveToward(unit, teammate.x, teammate.y, 64f);
+                }
+            }
         }
 
         private void updateMining(Unit unit) {

@@ -139,7 +139,7 @@ def main():
     run.add_argument("--host", required=True, help="host IP address or hostname")
     run.add_argument("--port", type=int, default=6567)
     run.add_argument("--owner", required=True, help="your exact in-game name without color codes")
-    run.add_argument("--bots", nargs="+", required=True, help="space-separated bot names")
+    run.add_argument("--bots", nargs="+", default=["Mindy"], help="bot names (default: one bot named Mindy)")
     args = parser.parse_args()
     if args.action == "run":
         folded = {name.casefold() for name in args.bots}
