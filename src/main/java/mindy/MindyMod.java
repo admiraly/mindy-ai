@@ -6,6 +6,7 @@ import arc.math.geom.Vec2;
 import arc.util.Log;
 import arc.util.Strings;
 import arc.util.Time;
+import mindustry.content.Items;
 import mindustry.core.NetClient;
 import mindustry.core.World;
 import mindustry.entities.units.BuildPlan;
@@ -79,6 +80,8 @@ public class MindyMod extends Mod {
         private float projectDeadline;
         private float nextProjectSearch;
         private String status = "holding position";
+        private String miningIdleReason;
+        private String lastLoggedIdleReason;
 
         BotInput(String owner) {
             this.owner = owner;
@@ -97,6 +100,8 @@ public class MindyMod extends Mod {
             projectStep = 0;
             nextProjectSearch = 0;
             tactics.reset();
+            miningIdleReason = null;
+            lastLoggedIdleReason = null;
             status = "holding position";
             if (!player.dead()) player.unit().mineTile(null);
         }
@@ -229,23 +234,9 @@ public class MindyMod extends Mod {
                             }
                         });
                 }
-                if (!unit.canMine() || unit.stack.amount == 0 && (ore == null || core.items.get(ore) >= 200
+                if (!unit.canMine() || unit.stack.amount == 0 && (ore == null || core.items.get(ore) >= stockGoal(core, ore)
                     || unit.getMineResult(mine) != ore)) {
-                    ore = null;
-                    mine = null;
-                    int lowest = 200;
-                    if (unit.canMine()) {
-                        for (Item item : content.items()) {
-                            int stock = core.items.get(item);
-                            if (stock >= lowest || !unit.canMine(item)) continue;
-                            Tile candidate = unit.type.mineFloor ? indexer.findClosestOre(unit, item) : null;
-                            if (candidate == null && unit.type.mineWalls) candidate = indexer.findClosestWallOre(unit, item);
-                            if (unit.getMineResult(candidate) != item) continue;
-                            ore = item;
-                            mine = candidate;
-                            lowest = stock;
-                        }
-                    }
+                    chooseMiningJob(unit, core);
                 }
             }
 
@@ -264,13 +255,62 @@ public class MindyMod extends Mod {
                 if (building) unit.clearBuilding();
                 building = false;
                 if (ore != null) {
+                    lastLoggedIdleReason = null;
                     updateMining(unit);
                 } else {
                     unit.mineTile(null);
-                    status = "waiting near the core";
+                    status = miningIdleReason == null ? "checking for work near the core" : miningIdleReason;
+                    if (!status.equals(lastLoggedIdleReason)) {
+                        Log.info("Mindy: @", status);
+                        lastLoggedIdleReason = status;
+                    }
                     moveToward(unit, core.x, core.y, 64f);
                 }
             }
+        }
+
+        private void chooseMiningJob(Unit unit, Building core) {
+            ore = null;
+            mine = null;
+            if (!unit.canMine()) {
+                miningIdleReason = "no build job available and this unit cannot mine";
+                return;
+            }
+
+            float bestScore = Float.NEGATIVE_INFINITY;
+            boolean hasMineableOre = false;
+            for (Item item : content.items()) {
+                if (item.lowPriority || !unit.canMine(item)) continue;
+                Tile candidate = findOre(unit, item);
+                if (unit.getMineResult(candidate) != item) continue;
+                hasMineableOre = true;
+                int goal = stockGoal(core, item);
+                int shortage = goal - core.items.get(item);
+                if (shortage <= 0) continue;
+
+                float trip = candidate.dst(unit.x, unit.y) + Math.max(0f, candidate.dst(core.x, core.y) - itemTransferRange);
+                float priority = item == Items.copper ? 1.3f : 1f;
+                float score = priority * shortage / goal - trip / 1000f;
+                if (score > bestScore) {
+                    ore = item;
+                    mine = candidate;
+                    bestScore = score;
+                }
+            }
+            miningIdleReason = hasMineableOre
+                ? "no build job available and mineable ores are stocked"
+                : "no build job available and no suitable ores found for this unit";
+        }
+
+        private int stockGoal(Building core, Item item) {
+            int reserve = item == Items.copper ? 400 : item == Items.lead ? 280 : 180;
+            return Math.min(reserve, core.getMaximumAccepted(item));
+        }
+
+        private Tile findOre(Unit unit, Item item) {
+            Tile floor = unit.type.mineFloor ? indexer.findClosestOre(unit, item) : null;
+            Tile wall = unit.type.mineWalls ? indexer.findClosestWallOre(unit, item) : null;
+            return wall != null && (floor == null || unit.dst2(wall) < unit.dst2(floor)) ? wall : floor;
         }
 
         private boolean updateProject(Unit unit, Building core) {
@@ -358,8 +398,7 @@ public class MindyMod extends Mod {
             }
 
             if (unit.getMineResult(mine) != ore && Time.time >= nextSearch) {
-                mine = unit.type.mineFloor ? indexer.findClosestOre(unit, ore) : null;
-                if (mine == null && unit.type.mineWalls) mine = indexer.findClosestWallOre(unit, ore);
+                mine = findOre(unit, ore);
                 nextSearch = Time.time + 60f;
             }
             if (unit.getMineResult(mine) != ore) {

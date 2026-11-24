@@ -52,6 +52,8 @@ When no outpost fits, Mindy plans resource extraction. It scores ore patches by 
 
 Mindy remembers the blocks it builds during the current map. Once combat settles, it prioritizes replacing nearby blocks destroyed during play when the site is clear and the team can afford them. Manual deconstruction does not queue a repair. Advanced factories, research, and campaign decisions still require a player. Each bot runs in a graphical client.
 
+When mining by hand, Mindy weighs the shortage against the distance to the ore and the return trip. It keeps a larger buffer of copper and lead for construction and skips low-priority ores such as sand. If it has no job, `!mindy Mindy status` explains why it is waiting.
+
 Tested with two bots in a Serpulo campaign sector and on a vanilla dedicated server. Campaign sector transitions and platforms other than Windows still need playtesting.
 
 ## References
