@@ -48,7 +48,7 @@ Both blueprints are native Mindustry schematics you can import individually. Pla
 - [Copper Outpost](src/main/resources/blueprints/copper-outpost.msch) uses a drill and a Duo.
 - [Fortified Outpost](src/main/resources/blueprints/fortified-outpost.msch) adds two copper walls on the outer edge.
 
-When no outpost fits, Mindy looks for a starter mining line. Once the host has unlocked mechanical drills and conveyors, it can choose an ore patch and route up to eight conveyors through empty tiles to feed the core. It rechecks each placement during construction.
+When no outpost fits, Mindy plans resource extraction. It scores ore patches by estimated drill output, core stock, existing supply, and conveyor cost. It can connect a standalone drill or place a new mechanical drill, then route up to 18 new conveyors through empty tiles. When an existing friendly belt already leads to the core, Mindy can join it without replacing it. It rechecks each placement during construction. The planner handles standard conveyors and direct core delivery.
 
 Mindy remembers the blocks it builds during the current map. Once combat settles, it prioritizes replacing nearby blocks destroyed during play when the site is clear and the team can afford them. Manual deconstruction does not queue a repair. Advanced factories, research, and campaign decisions still require a player. Each bot runs in a graphical client.
 

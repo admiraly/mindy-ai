@@ -9,7 +9,9 @@ import mindustry.type.Item;
 import mindustry.world.Block;
 import mindustry.world.Build;
 import mindustry.world.Tile;
+import mindustry.world.blocks.distribution.Conveyor.ConveyorBuild;
 import mindustry.world.blocks.production.Drill;
+import mindustry.world.blocks.production.Drill.DrillBuild;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -20,7 +22,8 @@ import static mindustry.Vars.*;
 
 final class MiningPlanner {
     private record Route(Tile tile, int rotation, Route downstream, int length) {}
-    private static final int maxBelts = 8;
+    private static final int maxNewBelts = 18;
+    private static final int maxNetworkDistance = 32;
 
     static BuildProject plan(Unit unit, Building core) {
         var drill = (Drill) Blocks.mechanicalDrill;
@@ -28,21 +31,44 @@ final class MiningPlanner {
         if (!drill.unlockedNowHost() || !belt.unlockedNowHost()
             || !drill.environmentBuildable() || !belt.environmentBuildable()) return null;
 
-        var nearbyProduction = new HashSet<Item>();
-        indexer.eachBlock(unit.team, core.x, core.y, 320f,
-            block -> block instanceof Drill.DrillBuild mining && mining.dominantItem != null,
-            block -> nearbyProduction.add(((Drill.DrillBuild) block).dominantItem));
-
-        var frontier = new ArrayDeque<Route>();
+        var frontier = connectedInputs(core);
         var visited = new HashSet<Integer>();
-        core.tile.getLinkedTiles(tile -> frontier.add(new Route(tile, 0, null, 0)));
+        var connected = new HashSet<Building>();
+        for (Route input : frontier) connected.add(input.tile.build);
+        float[] incoming = new float[content.items().size];
+        indexer.eachBlock(unit.team, core.x, core.y, maxNetworkDistance * tilesize,
+            block -> block instanceof DrillBuild drillBuild && drillBuild.dominantItem != null,
+            block -> {
+                var existing = (DrillBuild) block;
+                if (existing.proximity.contains(connected::contains)) {
+                    incoming[existing.dominantItem.id] += rate((Drill) existing.block,
+                        existing.dominantItem, existing.dominantItems);
+                }
+            });
+
         BuildProject best = null;
         float bestScore = Float.NEGATIVE_INFINITY;
         while (!frontier.isEmpty()) {
             Route end = frontier.remove();
             for (int direction = 0; direction < 4; direction++) {
+                if ((end.length > 0 || end.tile.build instanceof ConveyorBuild)
+                    && ((direction + 2) & 3) == end.rotation) continue;
                 var offset = Geometry.d4(direction);
                 Tile neighbor = world.tile(end.tile.x - offset.x, end.tile.y - offset.y);
+                if (neighbor != null && end.length > 0 && neighbor.build instanceof DrillBuild existing
+                    && existing.team == unit.team && existing.dominantItem != null
+                    && existing.proximity.count(other -> other.team == unit.team && other.block.hasItems) == 0) {
+                    Item item = existing.dominantItem;
+                    float score = score(core, item, rate((Drill) existing.block, item, existing.dominantItems),
+                        incoming[item.id], end.length) + 5f;
+                    if (score > bestScore && useful(core, item)) {
+                        var candidate = new BuildProject("connection for an existing " + item.name + " drill", belts(end));
+                        if (candidate.affordable(unit, core, null, 0)) {
+                            best = candidate;
+                            bestScore = score;
+                        }
+                    }
+                }
                 if (!empty(neighbor)) continue;
 
                 // A size-two drill can touch this edge in either of two alignments.
@@ -66,15 +92,11 @@ final class MiningPlanner {
                             oreTiles++;
                         }
                     }
-                    if (!clear || item == null || nearbyProduction.contains(item)
+                    if (!clear || item == null || !useful(core, item)
                         || !Build.validPlace(drill, unit.team, x, y, 0)) continue;
-                    float score = oreTiles * 4f - end.length - Math.min(core.items.get(item), 200) / 25f;
+                    float score = score(core, item, rate(drill, item, oreTiles), incoming[item.id], end.length);
                     if (score <= bestScore) continue;
-                    var plans = new ArrayList<BuildPlan>();
-                    for (Route part = end; part.length > 0; part = part.downstream) {
-                        plans.add(new BuildPlan(part.tile.x, part.tile.y, part.rotation, belt));
-                    }
-                    Collections.reverse(plans);
+                    var plans = belts(end);
                     plans.add(new BuildPlan(x, y, 0, drill));
                     var candidate = new BuildProject(item.name + " mining line", plans);
                     if (!candidate.affordable(unit, core, null, 0)) continue;
@@ -82,13 +104,56 @@ final class MiningPlanner {
                     bestScore = score;
                 }
 
-                if (end.length < maxBelts && Build.validPlace(belt, unit.team, neighbor.x, neighbor.y, direction)
+                if (end.length < maxNewBelts && neighbor.within(core, maxNetworkDistance * tilesize)
+                    && Build.validPlace(belt, unit.team, neighbor.x, neighbor.y, direction)
                     && visited.add(neighbor.pos())) {
                     frontier.add(new Route(neighbor, direction, end, end.length + 1));
                 }
             }
         }
         return best;
+    }
+
+    private static ArrayDeque<Route> connectedInputs(Building core) {
+        var search = new ArrayDeque<Route>();
+        var inputs = new ArrayDeque<Route>();
+        var visited = new HashSet<Integer>();
+        core.tile.getLinkedTiles(tile -> search.add(new Route(tile, 0, null, 0)));
+        while (!search.isEmpty()) {
+            Route input = search.remove();
+            inputs.add(input);
+            for (var offset : Geometry.d4) {
+                Tile adjacent = world.tile(input.tile.x + offset.x, input.tile.y + offset.y);
+                if (adjacent != null && adjacent.build instanceof ConveyorBuild conveyor
+                    && conveyor.team == core.team && conveyor.enabled && conveyor.front() == input.tile.build
+                    && adjacent.within(core, maxNetworkDistance * tilesize) && visited.add(adjacent.pos())) {
+                    search.add(new Route(adjacent, conveyor.rotation, null, 0));
+                }
+            }
+        }
+        return inputs;
+    }
+
+    private static ArrayList<BuildPlan> belts(Route end) {
+        var plans = new ArrayList<BuildPlan>();
+        for (Route part = end; part.length > 0; part = part.downstream) {
+            plans.add(new BuildPlan(part.tile.x, part.tile.y, part.rotation, Blocks.conveyor));
+        }
+        Collections.reverse(plans);
+        return plans;
+    }
+
+    private static boolean useful(Building core, Item item) {
+        return !item.lowPriority && core.items.get(item) < Math.min(240, core.getMaximumAccepted(item));
+    }
+
+    private static float rate(Drill drill, Item item, int tiles) {
+        return 60f * tiles / drill.getDrillTime(item);
+    }
+
+    private static float score(Building core, Item item, float rate, float incoming, int belts) {
+        float deficit = 1f - core.items.get(item) / 240f;
+        return 12f * deficit + 10f * rate / (0.35f + incoming) - belts * 0.65f;
     }
 
     private static boolean empty(Tile tile) {
