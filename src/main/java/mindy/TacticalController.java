@@ -61,7 +61,7 @@ final class TacticalController {
                 build -> build instanceof RepairPointBuild point && point.efficiency > 0);
             if (repair != null) {
                 destination.set(repair.x, repair.y);
-                return new Order("falling back to a repair point", destination, aim(unit, enemy, range));
+                return new Order("Ich ziehe mich zum Reparaturpunkt zurück.", destination, aim(unit, enemy, range));
             }
             if (core != null && (enemy == null || core.dst2(enemy) > unit.dst2(enemy))) {
                 destination.set(core.x, core.y);
@@ -71,7 +71,7 @@ final class TacticalController {
             } else {
                 return null;
             }
-            return new Order("retreating to cover", destination, aim(unit, enemy, range));
+            return new Order("Ich bin angeschlagen und gehe in Deckung.", destination, aim(unit, enemy, range));
         }
         if (enemy == null || !unit.type.hasWeapons() || !unit.within(enemy, range)) return null;
 
@@ -84,7 +84,7 @@ final class TacticalController {
             destination.set(unit.x - enemy.x, unit.y - enemy.y)
                 .rotate90((unit.id & 1) == 0 ? 1 : -1).setLength(24f).add(unit.x, unit.y);
         }
-        return new Order("engaging " + enemy.type.localizedName, destination, aim(unit, enemy, range));
+        return new Order("Ich nehme " + enemy.type.localizedName + " unter Beschuss.", destination, aim(unit, enemy, range));
     }
 
     private Vec2 aim(Unit unit, Unit enemy, float range) {

@@ -81,6 +81,8 @@ public class MindyMod extends Mod {
         private boolean autonomous = true;
         private float nextChatter;
         private float nextConversation;
+        private Player lastStockQuestion;
+        private float stockFollowUpUntil;
         private int lastChatLine = -1;
         private float nextDecision;
         private ConstructBuild construction;
@@ -92,7 +94,7 @@ public class MindyMod extends Mod {
         private int projectStep;
         private float projectDeadline;
         private float nextProjectSearch;
-        private String status = "holding position";
+        private String status = "Ich halte meine Position.";
         private String miningIdleReason;
         private String lastLoggedIdleReason;
         private int oreGoal;
@@ -119,13 +121,14 @@ public class MindyMod extends Mod {
             tactics.reset();
             nextChatter = Time.time + Mathf.random(900f, 1500f);
             nextConversation = 0;
+            lastStockQuestion = null;
             miningIdleReason = null;
             lastLoggedIdleReason = null;
             oreGoal = 0;
             patrolTarget = null;
             patrolDirection = 0;
             nextPatrolTarget = 0;
-            status = "holding position";
+            status = "Ich halte meine Position.";
             if (!player.dead()) player.unit().mineTile(null);
         }
 
@@ -135,7 +138,7 @@ public class MindyMod extends Mod {
 
             String message = Strings.stripColors(event.message).strip();
             if (!message.regionMatches(true, 0, "!mindy ", 0, 7)) {
-                converse(message);
+                converse(sender, message);
                 return;
             }
             if (!owner.equals(Strings.stripColors(sender.name))) return;
@@ -171,10 +174,10 @@ public class MindyMod extends Mod {
                     clearTask();
                     autonomous = false;
                     ore = requested;
-                    status = "looking for " + ore.name;
+                    status = "Ich suche nach " + itemName(ore) + ".";
                     reply("Mining " + ore.name + ".");
                 }
-                case "status" -> reply(status + ".");
+                case "status" -> reply(currentStatus());
                 default -> reply("Commands: auto, follow, hold, mine <item>, status.");
             }
         }
@@ -184,39 +187,73 @@ public class MindyMod extends Mod {
             Call.sendChatMessage(message);
         }
 
-        private void converse(String message) {
+        private void converse(Player sender, String message) {
             if (Time.time < nextConversation) return;
             String name = player.name.toLowerCase(java.util.Locale.ROOT);
             String lower = message.toLowerCase(java.util.Locale.ROOT);
             if (lower.startsWith("@")) lower = lower.substring(1);
-            if (!lower.startsWith(name)
-                || lower.length() > name.length() && Character.isLetterOrDigit(lower.charAt(name.length()))) return;
+            boolean addressed = lower.startsWith(name)
+                && (lower.length() == name.length() || !Character.isLetterOrDigit(lower.charAt(name.length())));
+            String question = addressed ? lower.substring(name.length()).replaceFirst("^[\\s,:]+", "") : lower;
+            boolean stockFollowUp = sender == lastStockQuestion && Time.time < stockFollowUpUntil
+                && question.matches("und (kupfer|blei|kohle|titan|sand)[?.!]?");
+            if (!addressed && !stockFollowUp) return;
 
-            String question = lower.substring(name.length()).replaceFirst("^[\\s,:]+", "");
             String answer;
             if (question.contains("meme") || question.contains("spruch")) {
                 answer = randomMeme();
             } else if (question.contains("danke") || question.contains("dank dir")) {
                 answer = "Gern.";
             } else if (question.contains("wie geht") || question.contains("alles klar")) {
-                answer = player.dead() ? "Ich warte aufs Respawnen." : "Alles gut. Bin im Einsatz.";
+                answer = player.dead() ? currentStatus() : "Bin bei " + Math.round(player.unit().healthf() * 100)
+                    + " % Leben. " + status;
             } else if (question.contains("status") || question.contains("was machst") || question.contains("was tust")
-                || question.contains("idle") || question.contains("warum stehst")) {
-                answer = player.dead() ? "Ich warte aufs Respawnen." : "Status: " + status + ".";
-            } else if (question.contains("wie viel") || question.contains("wieviel") || question.contains("vorrat")) {
-                var core = player.team().core();
-                if (core == null) answer = "Wir haben gerade keinen Kern.";
-                else if (question.contains("kupfer")) answer = "Kupfer im Kern: " + core.items.get(Items.copper) + ".";
-                else if (question.contains("blei")) answer = "Blei im Kern: " + core.items.get(Items.lead) + ".";
-                else answer = "Im Kern: " + core.items.get(Items.copper) + " Kupfer und " + core.items.get(Items.lead) + " Blei.";
+                || question.contains("idle") || question.contains("warum stehst") || question.contains("was baust")
+                || question.contains("warum patrouill")) {
+                answer = currentStatus();
+            } else if (stockFollowUp || question.contains("wie viel") || question.contains("wieviel")
+                || question.contains("vorrat") || question.contains("im kern")) {
+                answer = stockReport(question);
+                lastStockQuestion = sender;
+                stockFollowUpUntil = Time.time + 1200f;
             } else if (question.isBlank() || question.matches("(hi|hallo|hey|moin)\\b.*")) {
                 answer = "Moin.";
             } else {
-                answer = "Frag mich nach meinem Status, Kupfer oder Blei im Kern oder einem Meme.";
+                answer = "Das habe ich nicht verstanden. Frag mich, was ich mache oder wie viel Erz im Kern liegt.";
             }
             nextConversation = Time.time + 300f;
             nextChatter = Math.max(nextChatter, Time.time + 900f);
             reply(answer);
+        }
+
+        private String currentStatus() {
+            return player.dead() ? "Ich warte aufs Respawnen." : status;
+        }
+
+        private String stockReport(String question) {
+            var core = player.team().core();
+            if (core == null) return "Wir haben gerade keinen Kern.";
+            var amounts = new java.util.StringJoiner(", ");
+            for (Item item : new Item[]{Items.copper, Items.lead, Items.coal, Items.titanium, Items.sand}) {
+                String name = itemName(item);
+                if (question.contains(name.toLowerCase(java.util.Locale.ROOT))) {
+                    amounts.add(core.items.get(item) + " " + name);
+                }
+            }
+            return "Im Kern: " + (amounts.length() == 0
+                ? core.items.get(Items.copper) + " Kupfer und " + core.items.get(Items.lead) + " Blei"
+                : amounts.toString()) + ".";
+        }
+
+        private String itemName(Item item) {
+            return switch (item.name) {
+                case "copper" -> "Kupfer";
+                case "lead" -> "Blei";
+                case "coal" -> "Kohle";
+                case "titanium" -> "Titan";
+                case "sand" -> "Sand";
+                default -> item.localizedName;
+            };
         }
 
         @Override
@@ -239,9 +276,9 @@ public class MindyMod extends Mod {
                 if (!Groups.player.contains(other -> other == leader) || leader.team() != player.team()) {
                     clearTask();
                 } else if (leader.dead()) {
-                    status = "waiting for " + owner + " to respawn";
+                    status = "Ich warte, bis " + owner + " wieder da ist.";
                 } else {
-                    status = "following " + owner;
+                    status = "Ich folge " + owner + ".";
                     moveToward(unit, leader.x, leader.y, 48f);
                 }
             }
@@ -292,7 +329,7 @@ public class MindyMod extends Mod {
             }
 
             if (core == null) {
-                status = "waiting for a team core";
+                status = "Ohne Teamkern kann ich nichts abliefern oder bauen.";
                 unit.mineTile(null);
                 return;
             }
@@ -328,7 +365,7 @@ public class MindyMod extends Mod {
                 }
                 building = true;
                 isBuilding = true;
-                status = "helping build " + construction.current.name;
+                status = "Ich helfe beim Bau von " + construction.current.localizedName + ".";
                 moveToward(unit, construction.x, construction.y, unit.type.buildRange - tilesize);
             } else {
                 if (building) unit.clearBuilding();
@@ -338,7 +375,7 @@ public class MindyMod extends Mod {
                     updateMining(unit);
                 } else {
                     unit.mineTile(null);
-                    status = miningIdleReason == null ? "patrolling the core" : "patrolling the core: " + miningIdleReason;
+                    status = "Ich patrouilliere um den Kern." + (miningIdleReason == null ? "" : " " + miningIdleReason);
                     if (!status.equals(lastLoggedIdleReason)) {
                         Log.info("Mindy: @", status);
                         lastLoggedIdleReason = status;
@@ -353,7 +390,7 @@ public class MindyMod extends Mod {
             mine = null;
             oreGoal = 0;
             if (!unit.canMine()) {
-                miningIdleReason = "no build job available and this unit cannot mine";
+                miningIdleReason = "Ich finde keinen Bauauftrag und meine Einheit kann kein Erz abbauen.";
                 return;
             }
 
@@ -382,8 +419,8 @@ public class MindyMod extends Mod {
                 }
             }
             miningIdleReason = hasMineableOre
-                ? "no build job available and storage is full for mineable ores"
-                : "no build job available and no suitable ores found for this unit";
+                ? "Für das Erz, das ich abbauen kann, ist der Kern voll."
+                : "Ich finde gerade kein geeignetes Erz oder Bauprojekt.";
         }
 
         private void patrol(Unit unit, Building core) {
@@ -457,7 +494,8 @@ public class MindyMod extends Mod {
                 }
                 building = true;
                 isBuilding = true;
-                status = "building " + project.name();
+                status = "Ich baue gerade an „" + project.name() + "“ (" + (projectStep + 1)
+                    + "/" + project.plans().size() + ").";
                 moveToward(unit, tile.worldx(), tile.worldy(), unit.type.buildRange - tilesize);
                 return true;
             }
@@ -475,13 +513,13 @@ public class MindyMod extends Mod {
         private void updateMining(Unit unit) {
             if (!unit.canMine() || !unit.canMine(ore)) {
                 unit.mineTile(null);
-                status = "this unit cannot mine " + ore.name;
+                status = "Meine Einheit kann " + itemName(ore) + " nicht abbauen.";
                 return;
             }
             var core = unit.closestCore();
             if (core == null) {
                 unit.mineTile(null);
-                status = "waiting for a team core";
+                status = "Ich kann das Erz erst abliefern, wenn wir wieder einen Kern haben.";
                 return;
             }
 
@@ -489,11 +527,12 @@ public class MindyMod extends Mod {
             else if (!unit.acceptsItem(ore)) hauling = true;
             if (hauling) {
                 unit.mineTile(null);
-                status = "returning to the core";
+                status = "Ich bringe " + unit.stack.amount + " " + itemName(unit.item()) + " zum Kern.";
                 if (!unit.within(core, itemTransferRange - tilesize)) {
                     moveToward(unit, core.x, core.y, itemTransferRange - tilesize);
                 } else if (core.acceptStack(unit.item(), unit.stack.amount, unit) == 0) {
-                    status = autonomous ? "patrolling with cargo while the core is full" : "waiting for space in the core";
+                    status = autonomous ? "Ich patrouilliere mit meiner Ladung. Im Kern ist dafür kein Platz."
+                        : "Ich warte, bis im Kern Platz für meine Ladung ist.";
                     if (autonomous) patrol(unit, core);
                 } else if (Time.time >= nextDeposit) {
                     Call.transferInventory(player, core);
@@ -508,13 +547,13 @@ public class MindyMod extends Mod {
             }
             if (unit.getMineResult(mine) != ore) {
                 unit.mineTile(null);
-                status = "waiting for accessible " + ore.name + " ore";
+                status = "Ich finde gerade kein frei zugängliches " + itemName(ore) + ".";
             } else if (unit.validMine(mine)) {
                 unit.mineTile(mine);
-                status = "mining " + ore.name;
+                status = "Ich baue " + itemName(ore) + " ab.";
             } else {
                 unit.mineTile(null);
-                status = "traveling to " + ore.name;
+                status = "Ich bin auf dem Weg zu " + itemName(ore) + ".";
                 moveToward(unit, mine.worldx(), mine.worldy(), unit.type.mineRange - tilesize);
             }
         }
@@ -525,7 +564,7 @@ public class MindyMod extends Mod {
             if (!unit.isFlying()) {
                 var path = controlPath.getPathPosition(unit, destination);
                 if (!path.move) {
-                    if (path.unreachable) status = "cannot reach the destination";
+                    if (path.unreachable) status = "Ich finde keinen Weg zum Ziel.";
                     return;
                 }
                 destination.set(path.dest);

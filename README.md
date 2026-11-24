@@ -37,7 +37,7 @@ Give each bot a distinct name. Add `--port` if the host uses a port other than 6
 
 Bots start in autonomous mode and clear their current task when a new map loads. All commands accept a bot name or `all`. Use a private session with people you trust. The controller check uses the configured display name and team, and anyone who can join that team with the same name can issue commands.
 
-Anyone on the same team can address Mindy in German. Try `Mindy, was machst du gerade?`, `@Mindy wie viel Kupfer haben wir?`, or `Mindy, sag ein Meme`. Mindy answers these topics using game state and a fixed list of meme quotes.
+Anyone on the same team can address Mindy in German. Try `Mindy, was baust du?` for project progress, `Mindy, wie geht's?` for health and current activity, or `@Mindy wie viel Kupfer haben wir?` for live core stock. After a stock question, the same player can ask a short follow-up like `und Blei?` within 20 seconds. Chat responses are rate-limited to one every five seconds. `Mindy, sag ein Meme` picks from a fixed list of meme quotes.
 
 ## Current scope
 
